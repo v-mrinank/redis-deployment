@@ -1,0 +1,103 @@
+- name: Disable and stop Redis services
+  systemd:
+    name: "redis-server-{{ inventory_hostname }}-{{ item }}"
+    state: stopped
+    enabled: false
+  with_items: "{{ range(1, redis_instance_per_machine + 1) | list }}"
+
+- name: Clear Redis Systemd services
+  file:
+    path: "/etc/systemd/system/redis-server-{{ inventory_hostname }}-{{ item }}.service"
+    state: absent
+  with_items: "{{ range(1, redis_instance_per_machine + 1) | list }}"
+
+- name: Reload Systemd
+  systemd:
+    daemon_reload: true
+
+- name: Clear Redis configuration directories
+  file:
+    path: "/etc/redis/{{ inventory_hostname }}"
+    state: absent
+
+- name: Clear Redis storage directories
+  shell: rm -rfv /var/lib/redis/*
+  register: remove_result
+  changed_when: remove_result.stdout != ""
+  args:
+    warn: false
+
+- name: Clear Redis cluster configured path
+  file:
+    path: "/etc/redis/cluster_configured"
+    state: absent
+
+- name: Create the string redis client port range
+  set_fact:
+    port_range: "{{ redis_start_port|string }}:{{ (redis_start_port|int + redis_instance_per_machine|int - 1)|string }}"
+
+- name: Create the string redis backend port range
+  set_fact:
+    back_port_range: "{{ (redis_start_port|int + 10000)|string }}:{{ (redis_start_port|int + redis_instance_per_machine|int + 9999)|string }}"
+
+- name: Configure UFW rules
+  ufw:
+    rule: "{{ item.rule }}"
+    port: "{{ item.port }}"
+    proto: "{{ item.proto | default('any') }}"
+    interface: "{{ item.interface | default(omit) }}"
+    direction: "{{ item.direction | default('in') }}"
+    src: "{{ item.src | default(omit) }}"
+    comment: "{{ item.comment | default(omit) }}"
+  with_items:
+    - rule: 'allow'
+      port: 'ssh'
+      comment: 'Allow SSH'
+
+    - rule: 'allow'
+      port: '{{ port_range }}'
+      proto: 'tcp'
+      interface: "{{ main_interface }}"
+      src: 'any'
+      comment: 'redis client'
+      delete: true
+
+    - rule: 'allow'
+      port: '{{ port_range }}'
+      proto: 'udp'
+      interface: "{{ main_interface }}"
+      src: 'any'
+      comment: 'redis client'
+      delete: true
+
+    - rule: 'allow'
+      port: '{{ port_range }}'
+      proto: 'tcp'
+      interface: "{{ sync_interface }}"
+      src: '{{ sync_interface_subnet }}'
+      comment: 'redis intercommunication'
+      delete: true
+
+    - rule: 'allow'
+      port: '{{ port_range }}'
+      proto: 'udp'
+      interface: "{{ sync_interface }}"
+      src: '{{ sync_interface_subnet }}'
+      comment: 'redis intercommunication'
+      delete: true
+
+    - rule: 'allow'
+      port: '{{ back_port_range }}'
+      proto: 'tcp'
+      interface: "{{ sync_interface }}"
+      src: '{{ sync_interface_subnet }}'
+      comment: 'redis intercommunication'
+      delete: true
+
+    - rule: 'allow'
+      port: '{{ back_port_range }}'
+      proto: 'udp'
+      interface: "{{ sync_interface }}"
+      src: '{{ sync_interface_subnet }}'
+      comment: 'redis intercommunication'
+      delete: true

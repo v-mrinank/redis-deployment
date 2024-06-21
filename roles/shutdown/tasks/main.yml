@@ -1,0 +1,4 @@
+- name: Stop Redis services
+  command: redis-cli -h localhost -p {{ item }} shutdown
+  with_items: "{{ range(redis_start_port, redis_start_port + redis_instance_per_machine + 1) | list }}"
+  changed_when: false

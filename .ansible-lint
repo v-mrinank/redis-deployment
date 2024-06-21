@@ -1,0 +1,4 @@
+skip_list:
+  - commas
+  - new-line-at-end-of-file
+  - trailing-spaces

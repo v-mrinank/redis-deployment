@@ -1,0 +1,27 @@
+---
+- hosts: redis_cluster
+  become: true
+  become_method: sudo
+  vars:
+    redis_start_port: 6379
+    redis_instance_per_machine: 2
+    redis_cpu_affinity: "1-2"
+    main_interface: "eno1"
+    sync_interface: "eno2"
+    main_interface_subnet: "192.168.1.1/16"
+    sync_interface_subnet: "172.16.1.1/24"
+  roles:
+    - role: stop
+      tags: [stop]
+    - role: clear
+      tags: [clear]
+    - role: install
+      tags: [install,init]
+    - role: firewall
+      tags: [firewall,init]
+    - role: configure
+      tags: [configure,init]
+    - role: start
+      tags: [start]
+    - role: shutdown
+      tags: [shutdown]

@@ -1,0 +1,12 @@
+port {{ redis_start_port + (item - 1) }}
+bind 0.0.0.0
+cluster-enabled yes
+cluster-config-file nodes-{{ redis_start_port + (item - 1) }}.conf
+cluster-node-timeout 5000
+appendonly yes
+maxmemory 28gb
+maxmemory-policy noeviction
+appendfilename "appendonly-{{ redis_start_port + (item - 1) }}.aof"
+dbfilename "dump-{{ redis_start_port + (item - 1) }}.rdb"
+protected-mode no
+cluster-announce-ip {{ inventory_hostname }}

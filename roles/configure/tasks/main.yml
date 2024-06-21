@@ -1,0 +1,75 @@
+---
+
+- name: Remove existing entry for the host
+  lineinfile:
+    path: /etc/hosts
+    regexp: '^(\d+\.\d+\.\d+\.\d+)\s+{{ inventory_hostname }}\s*$'
+    state: absent
+
+- name: Add new entry for the host
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[inventory_hostname]['other_ip'] }} {{ inventory_hostname }}"
+    state: present
+
+- name: Create Redis configuration directories
+  file:
+    path: "/etc/redis/{{ inventory_hostname }}"
+    state: directory
+    mode: 0755
+
+- name: Generate Redis configuration files
+  template:
+    src: redis_node.conf.j2
+    dest: "/etc/redis/{{ inventory_hostname }}/redis-node-{{ item }}.conf"
+    mode: 0644
+  with_items: "{{ range(1, redis_instance_per_machine + 1) | list }}"
+
+- name: Generate Redis systemd service files
+  template:
+    src: redis_service.j2
+    dest: "/etc/systemd/system/redis-server-{{ item }}.service"
+    mode: 0644
+  with_items: "{{ range(1, redis_instance_per_machine + 1) | list }}"
+
+- name: Enable and start Redis services
+  systemd:
+    name: "redis-server-{{ item }}"
+    state: restarted
+    daemon_reload: true
+    enabled: true
+  with_items: "{{ range(1, redis_instance_per_machine + 1) | list }}"
+
+- name: Check if Redis cluster configuration has been performed
+  stat:
+    path: /etc/redis/cluster_configured
+  register: cluster_configured
+
+- name: Generate the list of Redis instances
+  set_fact:
+    redis_instances: "{{ redis_instances|default([]) + [item.0 + ':' + (redis_start_port|int + item.1|int)|string] }}"
+  with_nested:
+    - "{{ ansible_play_hosts }}"
+    - "{{ range(0, redis_instance_per_machine) | list }}"
+  run_once: true
+  when: not cluster_configured.stat.exists
+
+- name: Create Redis cluster
+  shell: >
+    redis-cli --cluster create 
+    {% for instance in redis_instances %}
+    {{ instance }}
+    {% endfor %}
+    --cluster-replicas 1
+    --cluster-yes
+  args:
+    executable: /bin/bash
+  run_once: true
+  when: not cluster_configured.stat.exists
+
+- name: Create cluster configuration marker file
+  file:
+    path: /etc/redis/cluster_configured
+    state: touch
+    mode: '0644'
+  when: not cluster_configured.stat.exists
